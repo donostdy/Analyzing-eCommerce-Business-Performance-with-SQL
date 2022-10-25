@@ -1,0 +1,503 @@
+Data Preparation
+
+BEGIN;
+
+
+CREATE TABLE IF NOT EXISTS public.customers_dataset
+(
+    customers_id character varying COLLATE pg_catalog."default",
+    customer_unique_id character varying COLLATE pg_catalog."default",
+    customer_zip_code_prefix integer,
+    customer_city character varying COLLATE pg_catalog."default",
+    customer_state character varying COLLATE pg_catalog."default"
+);
+
+CREATE TABLE IF NOT EXISTS public.geolocation_dataset
+(
+    geolocation_zip_code_prefix integer,
+    geolocation_lat character varying COLLATE pg_catalog."default",
+    geolocation_lng character varying COLLATE pg_catalog."default",
+    geolocation_city character varying COLLATE pg_catalog."default",
+    geolocation_state character varying COLLATE pg_catalog."default"
+);
+
+CREATE TABLE IF NOT EXISTS public.order_items_dataset
+(
+    order_id character varying COLLATE pg_catalog."default",
+    order_item_id integer,
+    product_id character varying COLLATE pg_catalog."default",
+    seller_id character varying COLLATE pg_catalog."default",
+    shipping_limit_date timestamp with time zone,
+    price numeric,
+    freight_value numeric
+);
+
+CREATE TABLE IF NOT EXISTS public.order_payments_dataset
+(
+    order_id character varying COLLATE pg_catalog."default",
+    payment_sequential integer,
+    payment_type character varying COLLATE pg_catalog."default",
+    payment_installments integer,
+    payment_value character varying COLLATE pg_catalog."default"
+);
+
+CREATE TABLE IF NOT EXISTS public.order_reviews_dataset
+(
+    review_id character varying COLLATE pg_catalog."default",
+    order_id character varying COLLATE pg_catalog."default",
+    review_score character varying COLLATE pg_catalog."default",
+    review_comment_title character varying COLLATE pg_catalog."default",
+    review_comment_message character varying COLLATE pg_catalog."default",
+    review_creation_date character varying COLLATE pg_catalog."default",
+    review_answer_timestamp character varying COLLATE pg_catalog."default"
+);
+
+CREATE TABLE IF NOT EXISTS public.orders_dataset
+(
+    order_id character varying COLLATE pg_catalog."default",
+    customer_id character varying COLLATE pg_catalog."default",
+    order_status character varying COLLATE pg_catalog."default",
+    order_purchase_timestamp timestamp with time zone,
+    order_approved_at timestamp with time zone,
+    order_delivered_carrier_date timestamp with time zone,
+    order_delivered_customer_date timestamp with time zone,
+    order_estimated_delivery_date timestamp with time zone
+);
+
+CREATE TABLE IF NOT EXISTS public.product_dataset
+(
+    no integer,
+    product_id character varying COLLATE pg_catalog."default",
+    product_category_name character varying COLLATE pg_catalog."default",
+    product_name_lenght character varying COLLATE pg_catalog."default",
+    product_description_lenght character varying COLLATE pg_catalog."default",
+    product_photos_qty character varying COLLATE pg_catalog."default",
+    product_weight_g character varying COLLATE pg_catalog."default",
+    product_length_cm character varying COLLATE pg_catalog."default",
+    product_height_cm character varying COLLATE pg_catalog."default",
+    product_width_cm character varying COLLATE pg_catalog."default"
+);
+
+CREATE TABLE IF NOT EXISTS public.sellers_dataset
+(
+    sellers_id character varying COLLATE pg_catalog."default",
+    seller_zip_code_prefix integer,
+    seller_city character varying COLLATE pg_catalog."default",
+    seller_state character varying COLLATE pg_catalog."default"
+);
+
+ALTER TABLE IF EXISTS public.customers_dataset
+    ADD FOREIGN KEY (customer_zip_code_prefix)
+    REFERENCES public.geolocation_dataset (geolocation_zip_code_prefix) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.order_items_dataset
+    ADD FOREIGN KEY (product_id)
+    REFERENCES public.product_dataset (product_id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.order_items_dataset
+    ADD FOREIGN KEY (order_id)
+    REFERENCES public.orders_dataset (order_id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.order_items_dataset
+    ADD FOREIGN KEY (seller_id)
+    REFERENCES public.sellers_dataset (sellers_id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.order_payments_dataset
+    ADD FOREIGN KEY (order_id)
+    REFERENCES public.orders_dataset (order_id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.order_reviews_dataset
+    ADD FOREIGN KEY (order_id)
+    REFERENCES public.orders_dataset (order_id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.orders_dataset
+    ADD FOREIGN KEY (customer_id)
+    REFERENCES public.customers_dataset (customers_id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.sellers_dataset
+    ADD FOREIGN KEY (seller_zip_code_prefix)
+    REFERENCES public.geolocation_dataset (geolocation_zip_code_prefix) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+END;
+
+Annual Customer Activicty Growth Analysis
+
+-- Rata-rata Monthly Active User (MAU) per tahun
+SELECT
+    year,
+    ROUND(AVG(mau), 2)AS average_mau
+FROM
+    (SELECT
+        DATE_PART('YEAR', od.order_purchase_timestamp) AS year,
+        DATE_PART('MONTH', od.order_purchase_timestamp) AS month,
+        COUNT(DISTINCT cd.customer_unique_id) AS mau
+    FROM 
+        orders_dataset AS od
+    JOIN
+        customers_dataset AS cd
+        ON od.customer_id = cd.customers_id
+    GROUP BY
+        1, 2) AS table_avg
+GROUP BY
+    1;
+
+-- total customer baru per tahun
+WITH customer AS
+    (SELECT
+        customer_unique_id AS cust_id,
+        MIN(order_purchase_timestamp) AS first_order 
+    FROM
+        customers_dataset AS cd
+    JOIN
+        orders_dataset AS od
+        ON cd.customers_id = od.customer_id
+    GROUP BY
+        1
+    ORDER BY
+        1 ASC)
+
+SELECT
+    DATE_PART('YEAR', first_order),
+    COUNT (DISTINCT cust_id) AS total_new_cust
+FROM
+    customer
+GROUP BY
+    1
+ORDER BY
+    1 ASC;
+    
+-- jumlah customer yang melakukan repeat order per tahun
+SELECT
+    year,
+    COUNT(cust_id) AS cust_repeat_order
+FROM
+    (SELECT
+        DATE_PART('YEAR', order_purchase_timestamp) AS year,
+        customer_unique_id AS cust_id,
+        COUNT(customer_id) AS total_order
+    FROM
+        customers_dataset AS cd
+    JOIN
+        orders_dataset AS od
+        ON cd.customers_id = od.customer_id
+    GROUP BY
+        1, 2
+    ORDER BY
+        3 DESC) AS tabel_a
+WHERE
+    total_order > 1
+GROUP BY
+    1
+ORDER BY
+    1;
+
+-- rata-rata frekuensi order untuk setiap tahun
+SELECT
+    year,
+    ROUND(AVG(total_order), 2) AS avg_frec
+FROM
+    (SELECT
+        DATE_PART('YEAR', order_purchase_timestamp) AS year,
+        customer_unique_id AS cust_id,
+        COUNT(order_id) AS total_order
+    FROM
+        customers_dataset AS cd
+    JOIN
+        orders_dataset AS od
+        ON cd.customers_id = od.customer_id
+    GROUP BY
+        1, 2
+    ORDER BY
+        1) AS table_frec
+GROUP BY
+    year
+ORDER BY
+    year;
+
+-- 3 metrik
+WITH
+    avg_mau AS
+    (SELECT
+        year,
+        ROUND(AVG(mau), 2)AS average_mau
+    FROM
+        (SELECT
+            DATE_PART('YEAR', od.order_purchase_timestamp) AS year,
+            DATE_PART('MONTH', od.order_purchase_timestamp) AS month,
+            COUNT(DISTINCT cd.customer_unique_id) AS mau
+        FROM 
+            orders_dataset AS od
+        JOIN
+            customers_dataset AS cd
+            ON od.customer_id = cd.customers_id
+        GROUP BY
+            1, 2) AS table_avg
+    GROUP BY
+        1),
+    new_cust AS
+    (SELECT
+        DATE_PART('YEAR', first_order) AS year,
+        COUNT (DISTINCT cust_id) AS total_new_cust
+    FROM
+        (SELECT
+            customer_unique_id AS cust_id,
+            MIN(order_purchase_timestamp) AS first_order 
+        FROM
+            customers_dataset AS cd
+        JOIN
+            orders_dataset AS od
+            ON cd.customers_id = od.customer_id
+        GROUP BY
+            1
+        ORDER BY
+            1 ASC) AS table_c
+    GROUP BY
+        1
+    ORDER BY
+        1 ASC),
+    repeat AS
+    (SELECT
+        year,
+        COUNT(cust_id) AS cust_repeat_order
+    FROM
+        (SELECT
+            DATE_PART('YEAR', order_purchase_timestamp) AS year,
+            customer_unique_id AS cust_id,
+            COUNT(customer_id) AS total_order
+        FROM
+            customers_dataset AS cd
+        JOIN
+            orders_dataset AS od
+            ON cd.customers_id = od.customer_id
+        GROUP BY
+            1, 2
+        ORDER BY
+            3 DESC) AS tabel_a
+        WHERE
+            total_order > 1
+        GROUP BY
+            1
+        ORDER BY
+            1),
+    frec AS
+    (SELECT
+        year,
+        ROUND(AVG(total_order), 2) AS avg_frec
+    FROM
+        (SELECT
+            DATE_PART('YEAR', order_purchase_timestamp) AS year,
+            customer_unique_id AS cust_id,
+            COUNT(order_id) AS total_order
+        FROM
+            customers_dataset AS cd
+        JOIN
+            orders_dataset AS od
+            ON cd.customers_id = od.customer_id
+        GROUP BY
+            1, 2
+        ORDER BY
+            1) AS table_frec
+        GROUP BY
+            year
+        ORDER BY
+            year)
+SELECT
+    n.year,
+    average_mau,
+    total_new_cust,
+    cust_repeat_order,
+    avg_frec
+FROM
+    new_cust AS n
+JOIN avg_mau AS a ON n.year = a.year
+JOIN repeat AS r ON n.year = r.year
+JOIN frec AS f ON n.year = f.year
+   
+
+Annual Product Category Quality Analysis
+
+-- revenue per tahun
+CREATE TABLE IF NOT EXISTS tes_d AS(    
+    SELECT
+        DATE_PART('YEAR', shipping_limit_date) AS year,
+        SUM(price + freight_value) as revenue
+    FROM
+        orders_dataset AS od
+    JOIN
+        order_items_dataset AS oi
+        ON od.order_id = oi.order_id
+    WHERE
+        order_status = 'delivered'
+    GROUP BY
+        1);
+        
+------------------------------------------------------------------  
+-- jumlah cancel order per tahun
+CREATE TABLE IF NOT EXISTS tes_c AS(
+    SELECT
+        DATE_PART('YEAR', order_purchase_timestamp) AS year,
+        COUNT(order_status) AS canceled_order
+    FROM
+        orders_dataset
+    WHERE
+        order_status = 'canceled'
+    GROUP BY
+        1);
+------------------------------------------------------------------
+-- top kategori yang menghasilkan revenue terbesar per tahun
+CREATE TABLE IF NOT EXISTS tes_b AS
+    (SELECT
+        year,
+        category,
+        profit
+    FROM
+        (SELECT
+            DATE_PART('year', shipping_limit_date) AS year,
+            product_category_name AS category,
+            SUM(price + freight_value) AS profit,
+            RANK() OVER(PARTITION BY DATE_PART('year', shipping_limit_date) ORDER BY SUM(price + freight_value) DESC)
+        FROM
+            order_items_dataset AS oi
+        JOIN
+            product_dataset AS pd
+            ON oi.product_id = pd.product_id
+        WHERE
+            order_id IN
+            (SELECT
+                order_id
+            FROM
+                orders_dataset
+            WHERE
+                order_status = 'delivered')
+        GROUP BY
+            1, 2
+        ORDER BY
+            1, 3) AS tabel
+    WHERE
+        rank = 1);
+        
+------------------------------------------------------------------
+-- kategori yang mengalami cancel order terbanyak per tahun
+CREATE TABLE IF NOT EXISTS tes_a AS(
+    SELECT
+        year,
+        category,
+        total_canceled
+    FROM
+        (SELECT
+            DATE_PART('YEAR', order_purchase_timestamp) AS year,
+            product_category_name AS category,
+            COUNT(product_category_name) AS total_canceled,
+            RANK() OVER(PARTITION BY DATE_PART('YEAR', order_purchase_timestamp) ORDER BY COUNT(product_category_name) DESC )
+        FROM
+            orders_dataset AS od
+        FULL JOIN
+            order_items_dataset AS oi
+            ON od.order_id = oi.order_id
+        FULL JOIN
+            product_dataset AS pd
+            ON pd.product_id = oi.product_id
+        WHERE
+            od.order_status = 'canceled'
+        GROUP BY
+            1, 2
+        ORDER BY
+            1) AS tabel
+    WHERE
+        rank = 1);
+        
+------------------------------------------------------------------ 
+SELECT
+    b.year,
+    revenue,
+    total_canceled,
+    a.category AS top_category,
+    b.category AS most_canceled
+FROM
+    tes_b AS b
+FULL JOIN
+    tes_a AS a
+    ON a.year = b.year
+FULL JOIN
+    tes_c AS c
+    ON c.year = b.year
+FULL JOIN
+    tes_d AS d
+    ON d.year = b.year
+
+Analysis of Annual Payment Type Usage
+
+-- jumlah penggunaan masing-masing tipe pembayaran secara all time
+SELECT
+    payment_type,
+    COUNT(payment_type) AS total
+FROM
+    order_payments_dataset
+GROUP BY
+    1
+ORDER BY
+    1 DESC;
+
+-- detail informasi jumlah penggunaan masing-masing tipe pembayaran untuk setiap tahun
+SELECT
+    DATE_PART('YEAR', order_purchase_timestamp) AS year,
+    SUM(CASE payment_type
+            WHEN 'credit_card' THEN 1
+                ELSE 0
+                END) "Credit Card",
+    SUM(CASE payment_type
+        WHEN 'boleto' THEN 1
+            ELSE 0
+        END) "Boleto",
+    SUM(CASE payment_type
+        WHEN 'voucher' THEN 1
+            ELSE 0
+        END) "Voucher",
+    SUM(CASE payment_type
+        WHEN 'debit_card' THEN 1
+            ELSE 0
+        END) "Debit Card",
+    SUM(CASE payment_type
+        WHEN 'not_defined' THEN 1
+            ELSE 0
+        END) "Other"
+FROM
+    order_payments_dataset AS op
+JOIN
+    orders_dataset AS od
+    ON op.order_id = od.order_id
+GROUP BY
+    1
+ORDER BY
+    1;
